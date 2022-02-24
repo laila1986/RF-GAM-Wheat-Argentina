@@ -1,0 +1,136 @@
+# Setup
+
+```{r echo = F, include = FALSE, cache = F}
+library(knitr)
+library(tidyverse)
+opts_chunk$set(
+  fig.align = "center",
+  fig.retina = 5,
+  warning = F,
+  message = F,
+  cache = T,
+  echo = F
+)
+
+#* source functions
+fs::dir_ls(here::here("Codes/functions")) %>%
+  lapply(., source)
+```
+
+# Prepare dataset
+
+```{r }
+difm_geo <-
+  readRDS(here("Data/all_data.rds")) %>%
+  #* generate data for spatial cross-validation
+  mutate(split_data = list(
+    spatial_clustering_cv(
+      data,
+      coords = c("Y", "X"),
+      v = 20
+    )
+  )) %>%
+  #* find a set of variables that are not very highly
+  #* correlated with each other
+  mutate(vars_with_low_cor = list(
+    find_vars_to_keep(data[, ..x_vars_to_keep])
+  ))
+```
+
+# RF
+
+```{r }
+set.seed(893423)
+
+RF_spcv <-
+  difm_geo %>%
+  #* create a table of hyper parameters to tune
+  mutate(tune_pars = list(
+    expand.grid(
+      mtry = c(3, 5),
+      min.node.size = c(5, 10, 15),
+      sample.fraction = c(0.3, 0.4, 0.5),
+      vars_set = list(x_vars_to_keep, vars_with_low_cor)
+    ) %>%
+      data.table()
+  )) %>%
+  #* spatial cross validation
+  mutate(cv_results = list(
+    mclapply(
+      seq_len(nrow(tune_pars)),
+      function(x) {
+        print(x)
+        cv_data <-
+          run_sptial_cv_rf(
+            split_data,
+            mtry = tune_pars[x, mtry],
+            min.node.size = tune_pars[x, min.node.size],
+            sample.fraction = tune_pars[x, sample.fraction],
+            x_vars = c("nrate", tune_pars[x, vars_set][[1]])
+          ) %>%
+          .[, `:=`(
+            mtry = tune_pars[x, mtry],
+            min.node.size = tune_pars[x, min.node.size],
+            sample.fraction = tune_pars[x, sample.fraction],
+            x_vars = tune_pars[x, vars_set]
+          )]
+        return(cv_data)
+      },
+      mc.cores = 9
+    ) %>%
+      rbindlist()
+  ))
+
+# mtry() <- difm_geo$tune_pars[[1]][x, mtry]
+# min.node.size <- difm_geo$tune_pars[[1]][x, min.node.size]
+# sample.fraction <- difm_geo$tune_pars[[1]][x, sample.fraction]
+# x_vars <- c("nrate", difm_geo$tune_pars[[1]][x, vars_set][[1]])
+```
+
+# Spatial CV of GAM
+
+```{r }
+# split_data <- temp$split_data[[1]]
+# gam_formula <- temp$formula_short[[1]]
+
+gam_sp_cv <-
+  difm_geo %>%
+  mutate(formula_short = list(
+    paste0(
+      "yield ~ s(nrate, k = 2) + ",
+      paste0("I(nrate*", vars_with_low_cor, ")", collapse = " + "), " + ",
+      paste0("s(", vars_with_low_cor, ", k = 3)", collapse = " + ")
+    )
+  )) %>%
+  mutate(formula_full = list(
+    paste0(
+      "yield ~ s(nrate, k = 2) + ",
+      paste0("I(nrate*", x_vars_to_keep, ")", collapse = " + "), " + ",
+      paste0("s(", x_vars_to_keep, ", k = 3)", collapse = " + ")
+    )
+  )) %>%
+  mutate(formula_ls = list(
+    list(formula_short, formula_full)
+  )) %>%
+  mutate(cv_results = list(
+    mclapply(
+      formula_ls,
+      function(x) {
+        print(id_field)
+        cv_data <-
+          run_sptial_cv_gam(
+            split_data,
+            gam_formula = x
+          ) %>%
+          .[, gam_formula := x]
+        return(cv_data)
+      },
+      mc.cores = 2
+    ) %>%
+      rbindlist()
+  ))
+
+gam_sp_cv <- temp
+
+saveRDS(gam_sp_cv, "Results/gam_sp_cv.rds")
+```

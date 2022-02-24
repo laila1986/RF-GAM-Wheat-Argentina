@@ -1,0 +1,117 @@
+# Setup
+
+```{r echo = F, include = FALSE, cache = F}
+library(knitr)
+opts_chunk$set(
+  fig.align = "center",
+  fig.retina = 5,
+  warning = F,
+  message = F,
+  cache = T,
+  echo = F
+)
+
+#* source functions
+fs::dir_ls(here("Codes/functions")) %>%
+  lapply(., source)
+```
+
+
+# Prepare dataset
+
+```{r eval = F}
+x_vars <-
+  c(
+    "ec30", "ec90", "ecratio",
+    "aspect", "curvature", "slope", "tpi", "twi", "elevnorm",
+    "ndrepc", "ndvipc", "maxndvim30",
+    "soilom", "soilp", "soilph"
+  )
+
+difm_geo <-
+  st_read(here("Data/DIFM_VHA_Treats.shp")) %>%
+  data.table() %>%
+  setnames(names(.), tolower(names(.))) %>%
+  mutate(id_field = as_factor(id_field)) %>%
+  rename(
+    ec30 = ec30mean,
+    ec90 = ec90mean,
+    ndrepc = ndrepcmean,
+    ndvipc = ndvipcmean,
+    soilom = soilommean,
+    soilp = soilpmean,
+    soilph = soilphmean,
+    elevation = elevationm,
+    aspect = elevaspmea,
+    curvature = elevcurmea,
+    slope = elevslomea,
+    tpi = elevtpimea,
+    twi = elevtwimea
+  ) %>%
+  .[, `:=`(
+    ecratio = ec30 / ec90,
+    nrpb = (vhbyndvim - vvbyndvim) / (vhbyndvim + vvbyndvim)
+  )] %>%
+  .[, elevnorm := elevation / mean(elevation), by = id_field] %>%
+  mutate_at(
+    .vars = c("ec30", "ec90", "ecratio"),
+    funs(ifelse(ec30 == 0, NA, .))
+  ) %>%
+  mutate_at(
+    .vars = c("soilom", "soilp", "soilph"),
+    funs(ifelse(soilom == 0, NA, .))
+  ) %>%
+  mutate_at(
+    .vars = c("maxndvim10", "maxndvim20", "maxndvim30", "hmndvi", "maxndvi", "vhbyndvim", "vvbyndvim", "nrpb"),
+    funs(ifelse(maxndvim10 == 0, NA, .))
+  ) %>%
+  mutate_at(
+    .vars = c("elevation", "aspect", "curvature", "slope", "tpi", "twi", "elevnorm"),
+    funs(ifelse(elevation == 0, NA, .))
+  ) %>%
+  dplyr::select(
+    id_field:ec90, ecratio,
+    aspect:twi,
+    elevnorm,
+    ndrepc:soilph,
+    hmndvi, maxndvi, maxndvim10,
+    maxndvim20:vvbyndvim,
+    nrpb,
+    everything()
+  ) %>%
+  #* convert to nitrogen equivalent
+  mutate(nrate = ifelse(id_field == 79 | id_field == 25, rate2 * 0.32, rate2 * 0.46)) %>%
+  #* drop fields
+  filter(!(id_field %in% c(54, 56))) %>%
+  #* experimental parts of the fields
+  filter(difm == 1) %>%
+  dplyr::select(-difm, -crop, -elevation) %>%
+  #* nest by field
+  nest_by(id_field) %>%
+  #* add coordinates (used for spatial cross-validation)
+  mutate(data = list(
+    st_as_sf(data) %>%
+      cbind(., st_coordinates(st_centroid(.))) %>%
+      data.table()
+  )) %>%
+  #* decide which variables to keep by field
+  #* drop if there are too many missing values
+  mutate(x_vars_to_keep = list(
+    data %>%
+      .[, lapply(.SD, function(x) mean(is.na(x))), .SDcols = x_vars] %>%
+      melt() %>%
+      .[value <= 0.1, ] %>%
+      pull(variable) %>%
+      as.character()
+  )) %>%
+  mutate(all_vars = list(
+    c("yield", "nrate", x_vars_to_keep, "X", "Y")
+  )) %>%
+  mutate(data = list(
+    data[, ..all_vars] %>%
+      na.omit()
+  ))
+
+saveRDS(difm_geo, here("Data/all_data.rds"))
+```
+
