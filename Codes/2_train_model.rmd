@@ -1,0 +1,105 @@
+# Setup
+
+```{r echo = F, include = FALSE, cache = F}
+library(knitr)
+library(tidyverse)
+opts_chunk$set(
+  fig.align = "center",
+  fig.retina = 5,
+  warning = F,
+  message = F,
+  cache = T,
+  echo = F
+)
+
+#* source functions
+fs::dir_ls(here::here("Codes/functions")) %>%
+  lapply(., source)
+```
+
+# Prepare dataset
+
+```{r }
+difm_geo <- readRDS(here("Data/all_data.rds"))
+```
+
+# RF
+
+```{r }
+set.seed(893423)
+
+RF_sp_cv <-
+  readRDS("Results/rf_sp_cv.rds") %>%
+  #* pick the best hyper parametres and variable set
+  .[, .SD[which.min(rmse_cv), ], by = id_field]
+
+difm_geo %>%
+  left_join(., RF_sp_cv, by = "id_field") %>%
+  mutate(rf_trained = list(
+    grf::regression_forest(
+      X = data[, ..x_vars],
+      Y = data[, yield],
+      mtry = mtry,
+      min.node.size = min.node.size,
+      sample.fraction = sample.fraction,
+      num.threads = 1,
+      num.trees = 4000
+    )
+  )) %>%
+  mutate(n_seq = list(
+    data[, seq(min(nrate), max(nrate), by = 1)]
+  )) %>%
+  mutate(pred_data = list(
+    data %>%
+      .[, nrate := NULL] %>%
+      expand_grid_df(., data.table(nrate = n_seq))
+  ))
+```
+
+# Spatial CV of GAM
+
+```{r }
+# split_data <- temp$split_data[[1]]
+# gam_formula <- temp$formula_short[[1]]
+
+gam_sp_cv <-
+  difm_geo %>%
+  mutate(vars_ls = list(
+    list(x_vars_to_keep, vars_with_low_cor)
+  )) %>%
+  mutate(cv_results = list(
+    mclapply(
+      vars_ls,
+      function(x) {
+        print(id_field)
+
+        gam_formula <-
+          paste0(
+            "yield ~ s(nrate, k = 2) + ",
+            paste0("I(nrate*", x, ")", collapse = " + "), " + ",
+            paste0("s(", x, ", k = 3)", collapse = " + ")
+          )
+
+        cv_data <-
+          run_sptial_cv_gam(
+            split_data,
+            gam_formula = gam_formula
+          ) %>%
+          .[, `:=`(
+            vars = x,
+            gam_formula = gam_formula
+          )]
+        return(cv_data)
+      },
+      mc.cores = 2
+    ) %>%
+      rbindlist()
+  )) %>%
+  dplyr::select(id_field, cv_results) %>%
+  unnest() %>%
+  data.table()
+
+saveRDS(, "Results/gam_sp_cv.rds")
+
+gam_sp_cv[, .SD[which.min(rmse_cv), ], by = id_field]
+```
