@@ -185,17 +185,19 @@ g_sp_cv
 g_rmse_comp
 ```
 
-```{r yield-eonr-dist, fig.cap = "Distribution of EONR and YEONR by field", fig.dim = c(7, 9), cache = F}
+```{r yield-eonr-dist, fig.cap = "Distribution of EONR and YEONR by field", fig.dim = c(7, 7), cache = F}
 g_eonr_yield_dist
 ```
 
-```{r rf-shap, fig.cap = "Shapley values of top five contributing factors for RF-estimated EONR by field", fig.dim = c(7, 9), cache = F}
+```{r rf-shap, fig.cap = "Shapley values of top five contributing factors for RF-estimated EONR by field", fig.dim = c(7, 7), cache = F}
 rf_g_shap
 ```
+Note: Variable values are normalized to so that they vary from 0 (lowest: light yellow) to 1 (highest: dark purple).
 
-```{r gam-shap, fig.cap = "Shapley values of top five contributing factors for GAM-estimated EONR by field", fig.dim = c(7, 9), cache = F}
+```{r gam-shap, fig.cap = "Shapley values of top five contributing factors for GAM-estimated EONR by field", fig.dim = c(7, 7), cache = F}
 gam_g_shap
 ```
+Note: Variable values are normalized to so that they vary from 0 (lowest: light yellow) to 1 (highest: dark purple).
 
 ```{r eonr-cv, fig.cap = "Check of RF-based and GAM-based EONR estimates against local EONR estimates", fig.dim = c(7, 8), cache = F}
 g_eonr_cv

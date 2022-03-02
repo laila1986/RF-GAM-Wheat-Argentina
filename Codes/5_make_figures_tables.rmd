@@ -217,7 +217,7 @@ eonr_shap <-
   .[variable != "none", ] %>%
   setnames("variable", "norm_var") %>%
   .[, min_shap := min(shap)] %>%
-  .[, max_shap := max(shap)] %>%
+  .[, max_shap := max(shap) + 5] %>%
   nest_by(id_field, model, min_shap, max_shap) %>%
   mutate(data = list(
     data.table(data)
@@ -245,16 +245,33 @@ eonr_shap <-
       xlim(min_shap, max_shap) +
       ylab("") +
       xlab("") +
-      ggtitle(paste0("Field:", id_field)) +
+      ggtitle(paste0("Field: ", id_field)) +
       # xlab("Shapley Value (Impact on EONR)") +
       theme_bw() +
-      scale_color_viridis_c(option = "B", direction = -1) +
+      scale_color_viridis_c(
+        option = "B",
+        direction = -1,
+        name = ""
+      ) +
       theme(
-        legend.position = "none",
-        plot.title = element_text(size = 9)
+        legend.position = c(0.87, 0.6),
+        legend.box.background = element_rect(fill = "transparent", color = NA),
+        legend.background = element_rect(fill = "transparent", color = NA),
+        legend.key.height = unit(0.2, "cm"),
+        legend.key.width = unit(0.15, "cm"),
+        legend.text = element_text(margin = margin(t = 1), size = 5),
+        plot.title = element_text(size = 9),
+        plot.margin = unit(c(0, 0, 0, 0), "cm")
       )
   ))
 
+# g_for_legeng <-
+#   filter(eonr_shap, id_field == 78, model == "GAM") %>%
+#   pull(g_shap) %>%
+#   .[[1]] + theme(legend.position = "bottom")
+
+# library(ggpubr)
+# as_ggplot(get_legend(temp))
 
 library(patchwork)
 
