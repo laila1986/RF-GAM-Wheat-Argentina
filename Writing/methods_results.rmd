@@ -1,0 +1,212 @@
+---
+output:
+  officedown::rdocx_document:
+    toc: false
+    toc_depth: 1
+    number_sections: true
+    reference_docx: "word_template.docx"
+    plots:
+      style: Normal
+      align: center
+      caption:
+       style: Image Caption
+       pre: "Figure "
+       sep: ": "
+    tables:
+      style: Table
+      layout: autofit
+      width: 1.0
+      caption:
+       style: Table Caption
+       pre: "Table "
+       sep: ": "
+# bibliography: PA.bib
+# csl: field-crops-research.csl
+abstract: ""
+---
+
+```{r include = F, cache = F}
+library(knitr)
+library(here)
+library(officedown)
+library(officer)
+
+opts_chunk$set(
+  fig.align = "center",
+  fig.retina = 5,
+  warning = F,
+  message = F,
+  cache = T,
+  echo = F,
+  fig.cap = TRUE
+)
+```
+
+```{r include = F, cache = F}
+#--- packages ---#
+library(tidyverse)
+library(parallel)
+library(sf)
+library(spatialsample)
+library(car)
+library(broom)
+library(mgcv)
+library(shapr)
+library(ranger)
+library(fixest)
+library(flextable)
+library(patchwork)
+library(spatialRF)
+library(grf)
+library(here)
+library(tmap)
+library(data.table)
+library(gtools)
+```
+
+```{r figure_setup, cache = F}
+theme_update(
+  axis.title.x =
+    element_text(
+      size = 12, angle = 0, hjust = .5, vjust = -0.3, face = "plain"
+    ),
+  axis.title.y =
+    element_text(
+      size = 12, angle = 90, hjust = .5, vjust = .9, face = "plain"
+    ),
+  axis.text.x =
+    element_text(
+      size = 10, angle = 0, hjust = .5, vjust = 1.5, face = "plain"
+    ),
+  axis.text.y =
+    element_text(
+      size = 10, angle = 0, hjust = 1, vjust = 0, face = "plain"
+    ),
+  axis.ticks =
+    element_line(
+      size = 0.3, linetype = "solid"
+    ),
+  axis.ticks.length = unit(.15, "cm"),
+  #--- legend ---#
+  legend.text =
+    element_text(
+      size = 10, angle = 0, hjust = 0, vjust = 0, face = "plain"
+    ),
+  legend.title =
+    element_text(
+      size = 10, angle = 0, hjust = 0, vjust = 0, face = "plain"
+    ),
+  legend.key.size = unit(0.5, "cm"),
+  #--- strip (for faceting) ---#
+  strip.text = element_text(size = 10),
+  #--- plot title ---#
+  plot.title = element_text(family = "Times", face = "bold", size = 12),
+  #--- margin ---#
+  # plot.margin = margin(0, 0, 0, 0, "cm"),
+  #--- panel ---#
+  panel.grid.major = element_blank(),
+  panel.grid.minor = element_blank(),
+  panel.background = element_blank(),
+  panel.border = element_rect(fill = NA)
+)
+```
+
+```{r child = '../Codes/5_make_figures_tables.rmd'}
+
+```
+
+## Model training
+
+Yield was modeled using RF and GAM. The explanatory variables used to fit the models vary field by field (see Table S1 for the two sets of variable collections for each field). The "grf" and "mgcv" packages in R were used to train GAM and RF models, respectively. 
+
+While RF does not require that researchers specify how explanatory variables quantitatively relate to the dependent variable, GAM needs to specify what variables to smooth and what and how variables to interact with each other. Let $x_j$ denote $j$th explanatory variable ($J$ variables in total) and $N$ denote nitrogen rate. The yield model for GAM is specified as follows:
+
+$$
+\begin{aligned}
+yield = \beta_0 + f(N) + g_1(x_1) + \dots + + g_j(x_J) + \beta_1 x_1 \times N + \dots + \beta_J x_J \times N + \varepsilon
+\end{aligned}
+$$
+
+In the above formulation, $f()$ is the smoother of the impact of nitrogen on yield, $g_j()$ is the smoother of the impact of $x_j$, and $x_j \times N$ is the interaction of nitrogen rate and $x_j$ that captures how the impact of nitrogen is altered by other variables ($x_j$). 
+
+Both, RF and GAM were tuned using spatial cross-validation. When spatial autocorrelation is present in the dataset, such as DIFM N-trials (Miller, 2004), hyper parameter tuning using spatial cross-validation is recommended instead of regular cross-validation (Lovelace et al., 2019; Vucetic et al., 1999). RF was tuned on three hyper-parameters and two sets of variable collections using spatial cross-validation. Specifically, the number of variables used for splitting, minimum number of observations per tree leef, and sample fraction parameter in terms of hyper-parameters for RF. Further, we consider two sets of variable collections. First set includes all the available explanatory variables, and the second set of variables include only the variables that are not highly correlated with one another. Specifically, one of the two variables that are correlated stronger than the correlation coefficient of 0.8 was dropped. For GAM, spatial cross-validation was conducted to select one of the two set of variable collections used for RF using the same train and validation datasets for RF spatial cross-validation
+
+Spatial cross-validation was done using 10-fold spatially clustered train and test datasets generated using the "spatialsample" package. Figure \@ref(fig:spcv-viz) illustrates how spatially clustered train and test datasets are laid out for the 10 folds for field 1. 
+
+We picked the optimal set of hyper parameters and variables that had the lowest average RMSE of yield prediction from the spatial cross validation for each model and field. RF and GAM were then trained using the entire dataset with their respective selected hyper parameters and set of variables for each field. For RF, the number of trees are set to 2000, which ensures that the trained models are not overfitted.
+
+## EONR estimation
+
+Site-specific EONR for each field was obtained by solving the profit maximization problem at the xx level. Let $s$ denote a site within a field. 
+
+$$
+\begin{aligned}
+EONR_s = argmax_{N} Pw \times \hat{f(N, X_s)} - Pn\times N
+\end{aligned}
+$$
+
+In the above equation, $f()$ is the trained model, $\hat{f(N, X_s)}$ is the estimated yield based on nitrogen rate $(N)$ and characteristics of the site $(X_s)$, $Pw$ is the price of wheat (set at $\$160$/Mg), $Pn$ is the price of nitrogen (set at $\$0.76$/kg). 
+
+## Drivers of EONR heterogeneity
+
+It is important to understand what factors are driving the heterogeneity in site-specific EONR. In order to gain insights into this issue, we first train RF with respect to the estimated site-specific EONRs using the explanatory variables (except nitrogen rate) used in predicting yield for each field. We then calculate Shapley values of each explanatory variable, which meaasures the degree and direction of the contribution of individual explanatory variables to the heterogeneity in the estiated EONR. Shapley values are widely accepted measures to enhance the interpretability of machine learning methods. Shapley values are more suitable than the variable of importance measure. This is because variable of importance does not tell us the direction of the impact. For example, suppose a higher soil organimc matter level leads to a higher EONR. Variable of importance tells nothing about the directio, while Shapley value does.
+
+Note that we should not use Shapley values for the RF models trained for yield prediction. This is because the factor that contributes to explainin variations in yield, does not necessarily contribute to the variations in EONR. 
+
+## Validity of EONR prediction
+
+Finally, we will conduct a rough test of how well our models predict site-specific EONR. It is an extremetely hard task to verify the accuracy of the estimated site-specific EONR because we never observe the true EONR site-speficially. This is a stark contrast to validating models for yield prediction accuracy because actual yields are observed. In this study, we use the 10-fold test datasets to check the validity of our site-speific EONR estimation. Specifically, we take the followig steps for each fold: (1) Fit a linear regression model using the test dataset to estiamte the yield response curve, (2) find the uniform EONR for the small pocket, (3) calculate the average of the EONRs obtained using RF and GAM above over all the points in the small pocket, (4) compare the estimates of EONR for the samll pocket.
+
+It is worth emphasizing that this is not a formal test of how accurate our site-specific EONRs from RF and GAM are. The reference points for the RF and GAM are not the the true EONR, but merely an estimate of EONR derived from localized regressions as described above. Rather, this intends to give rough insights into how well our EONR estimates are for relatively small regions that may be relatively homogeneous. Despite its limitation, this analysis provides useful insights into the nature of RF- and GAM-derived EONR estimates. 
+
+# Results
+
+
+Figure \@ref(fig:rmse-comp) presents the RMSE of yield prediction for the trained data set (top panel) and the average of RMSE for the 10-fold spatial cross validation. It shows that RF is superior to GAM in predicting yield levels consistently across all the individual fields irrespective of which types of RMSE to look at. For most of the fields, the RMSE against the training dataset of RF is about 10% smaller than that of GAM except field 25 (number needs to change) in which RF performs significantly better than GAM. 
+
+Figure \@ref(fig:yield-eonr-dist) presents the distribution of estimated site-specific EONR (Panel A) and YEONR (Panel B) by model for the individual fields. According to Panel B, the distribution of estimated yield from the two models are very similar except for several fields. However, the distribution of EONR from the two models are quite different. While both models predict applying no nitrogen would result in the highest profit for many parts of the field for many fields (e.g., Field, bluh bluh), GAM tends to have more distribution mass on the non-zero regions of EONR and more geterogeneous in EONR than RF. It is also striking that RF suggests that not applying nitrogen at all uniformly for the entire field would result in the highest profit for a number of fields (e.g., list field ids here).  
+
+Figure \@ref(rf-shap) and \@ref(gam-shap) present the Shapley value of the five top contirbuting variables of each field for RF-based and GAM-based estimated EONR, respectively. For example, for GAM-based EONR estimation for field 75, `soilp` is the top contributor to the heterogneiety of the estiamted EONR. Since low (high) values of `soilp` are associated with low values of EONR, it indicates that EONR goes up as `soilp` goes up. According to Figure \@ref(rf-shap), Shapley values are meaningfully large only for four  fields (list fields). This is rather expected from Figure \@ref(fig:yield-eonr-dist) because there is very little heterogeneity in RF-based EONR estimates for most of the fields. In contrast, Shapley values for GAM-based EONR suggest that included explanatory variables contribute to the heterogeneity of EONR more. 
+
+Let's now focus on the Shapley values for GAM-based EONR to see what GAM identified as important factors to influence the response of yield to nitrogen. Fields 45, 52, 53, 71, and 76 are ignored for this discussion as they exhibit very small impact of the explanatory variables. `soilp` is the most and second-most influential factor in six fields. However, the direction of its impact on EONR is not consistent across the fields. Higher `soilp` leads to higher EONR for fields (list fields here), but leads to lower EONR for fields (list fields here). Normalized elevation is a key driver of EONR heterogneity for fields 25, 47, 51. Similarly with `soilp`, the direction of its impact is not consiste across fields. While a higher normalized elevation leads to a lower EONR in fields 25 and 51, it leads to a higher EONR in field 47. A similar observation can be made for `soilom` for fields 47 and 75. Another clear finding is that different factors contribute to the heterogeneity of EONR in different fields. For example, fields 51 and 75 share only `ndvipc` in their top five contributing factors. These findings indicate that training a model that uses mixed experiment datasets coming from different fields may lead to highly unreliable site-specific EONR when it is applied to another distinct field. 
+
+Finally, we look at the results of rough test of the validity of EONR estimation by RF and GAM. Figure \@ref(fig:eonr-cv) presents the average estimted EONR for individual folds for all the fields. An immediate conclusion from this analysis is that neither of RF or GAM are close to the uniform EONR estimated locally in general. There are many folds in many fields where either RF or GAM suggest very low EONR while the local EONR is high, and vice vera. RF suggest much lower EONR than local uniform EONR, while GAM either suggests much lower or higher EONRs depending on the field. Table \@ref(tab:mean-eonr-ramse) presents the RMSE and ME (mean error) for RF-based and GAM-based EONR estimates relative to local uniform EONR by field. It shows high RMSE of EONR for both RF and GAM. Further, it shows that RF suggest consistely and significantly lower EONR than local uniform EONR as you can seem from its ME values. 
+
+Overall, there are several important discussion points from our findings. First of all, model's ability to predict yield better may not mean that it is also better at predicting EONR. While RF consistently performed better in predicting yields than GAM, its prediction of EONR seems to be no better than GAM. Indeed, RF seemed to be severly underestimating EONR. If this is indeed the case, relying on RF can be potentially extremely dangerous. This is because under application of nitrogen is much more harmful to profitability than over application of nitrogen due to the nature of yield response cutve to nitrogen (cite German's paper). Second, estimating site-specific EONR may be a much more dauntig task than expected. Neither of RF and GAM seemed to be able to predict local EONR well. Moreover, the drivers of EONR and the magnitude of their impacts are highly incosistent across fields. (statistically speaking we are facing a very difficult problem of hunting unknowns. True EONR are never observed unlike yield.) 
+
+
+# Figures
+
+
+```{r spcv-viz, fig.cap = "Illustration of the train and test datasets in spatial cross-validation (Field 1)", fig.dim = c(7, 6)}
+g_sp_cv
+```
+```{r rmse-comp, fig.cap = "RMSE of Yield Prediction for the Trained Data and from Spatial Cross-validation", fig.dim = c(7, 4), cache = F}
+g_rmse_comp
+```
+
+```{r yield-eonr-dist, fig.cap = "Distribution of EONR and YEONR by field", fig.dim = c(7, 9), cache = F}
+g_eonr_yield_dist
+```
+
+```{r rf-shap, fig.cap = "Shapley values of top five contributing factors for RF-estimated EONR by field", fig.dim = c(7, 9), cache = F}
+rf_g_shap
+```
+
+```{r gam-shap, fig.cap = "Shapley values of top five contributing factors for GAM-estimated EONR by field", fig.dim = c(7, 9), cache = F}
+gam_g_shap
+```
+
+```{r eonr-cv, fig.cap = "Check of RF-based and GAM-based EONR estimates against local EONR estimates", fig.dim = c(7, 8), cache = F}
+g_eonr_cv
+```
+
+# Tables 
+
+```{r tab.cap = "Comparison of RMSE of Yield Precitions in Spatial Cross-validataion between the Full and Selected Sets of Explanatory Variables by Model", cache = F}
+rmse_cv_tab
+```
+
+```{r mean-eonr-ramse, tab.cap = "RMSE and ME of regional EONR estimates by RF and GAM", cache = F}
+eonr_rmse
+```

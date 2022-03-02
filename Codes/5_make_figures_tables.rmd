@@ -1,0 +1,383 @@
+<!-- # Setup {-} -->
+
+```{r echo = F, include = FALSE, cache = F}
+library(knitr)
+library(tidyverse)
+opts_chunk$set(
+  fig.align = "center",
+  fig.retina = 5,
+  warning = F,
+  message = F,
+  cache = T,
+  echo = F
+)
+
+#* source functions
+fs::dir_ls(here::here("Codes/functions")) %>%
+  lapply(., source)
+```
+
+```{r }
+rf_results <- readRDS(here("Results/rf_results.rds"))
+gam_results <- readRDS(here("Results/gam_results.rds"))
+```
+
+<!-- # Figures {-} -->
+
+<!-- ## Illustration of sptial cross-validation (Figure 4 in the 1st round manuscript) {-} -->
+
+```{r spcv-map, fig.cap}
+w_id_field <- 22
+
+geo_data <-
+  readRDS(here("Data/all_data.rds")) %>%
+  filter(id_field == w_id_field) %>%
+  pull(data) %>%
+  .[[1]] %>%
+  .[, .(obs_id, geometry)]
+
+data_for_cv <-
+  readRDS(here("Data/data_for_cv.rds")) %>%
+  filter(id_field == w_id_field) %>%
+  dplyr::select(split_data) %>%
+  pull(split_data) %>%
+  .[[1]] %>%
+  rowwise() %>%
+  mutate(train_data = list(
+    analysis(splits) %>%
+      .[, type := "Train"]
+  )) %>%
+  mutate(test_data = list(
+    assessment(splits) %>%
+      .[, type := "Test"]
+  )) %>%
+  mutate(all_data = list(
+    rbind(train_data, test_data) %>%
+      .[, fold := id]
+  )) %>%
+  pull(all_data) %>%
+  rbindlist() %>%
+  geo_data[., on = "obs_id"] %>%
+  .[, geomtry_point := st_centroid(geometry)] %>%
+  .[, .(type, fold, geomtry_point)] %>%
+  .[, fold := as.numeric(gsub("Fold", "", fold))] %>%
+  .[, fold := paste0("Fold: ", fold)] %>%
+  st_as_sf()
+
+g_sp_cv <-
+  ggplot(data_for_cv) +
+  geom_sf(aes(col = type), size = 0.3) +
+  facet_wrap(. ~ fold, ncol = 3) +
+  theme_void() +
+  guides(color = guide_legend(override.aes = list(size = 6))) +
+  scale_color_discrete(name = "Data Type") +
+  theme(
+    legend.position = c(0.8, 0.15)
+  )
+
+# tm_shape(data_for_cv) +
+#   tm_symbols(col = "type") +
+#   tm_facets(by = "fold")
+```
+
+<!-- ## RMSE and R^2 by field and model (Figure 6 in the 1st round manuscript) {-} -->
+
+```{r }
+rf_rmse_cv <-
+  readRDS(here("results/rf_rmse.rds")) %>%
+  data.table() %>%
+  .[, type := "RF"]
+
+gam_rmse_cv <-
+  readRDS(here("results/gam_rmse.rds")) %>%
+  data.table() %>%
+  .[, type := "GAM"]
+
+g_rmse_comp <-
+  rbind(rf_rmse_cv, gam_rmse_cv) %>%
+  melt(id.vars = c("id_field", "type")) %>%
+  .[, variable := fcase(
+    variable == "rmse_cv", "RMSE (SPCV)",
+    variable == "rmse_train", "RMSE"
+  )] %>%
+  .[, type := factor(type, levels = c("RF", "GAM"))] %>%
+  ggplot(.) +
+  geom_col(
+    aes(y = value, x = factor(id_field), fill = type),
+    position = "dodge",
+    width = 0.7
+  ) +
+  facet_grid(variable ~ .) +
+  ylab("") +
+  xlab("Field ID") +
+  scale_fill_discrete(name = "Model") +
+  theme_bw()
+```
+
+<!-- ## Boxplot of EONR and YEONR by field and model (Figure 7 in the 1st round manuscript) {-} -->
+
+
+
+<!-- ## Distribution of EONR and YEONR by field and model (Figure 8 in the 1st round manuscript) {-} -->
+
+```{r}
+rf_eonr <-
+  rf_results %>%
+  dplyr::select(id_field, eonr_data) %>%
+  unnest() %>%
+  data.table() %>%
+  .[, .(id_field, y_hat, nrate)] %>%
+  .[, type := "RF"]
+
+gam_eonr <-
+  gam_results %>%
+  dplyr::select(id_field, eonr_data) %>%
+  unnest() %>%
+  data.table() %>%
+  .[, .(id_field, y_hat, nrate)] %>%
+  .[, type := "GAM"]
+
+eonr_data <-
+  rbind(rf_eonr, gam_eonr)
+
+g_eonr_dist <-
+  ggplot() +
+  geom_histogram(
+    data = eonr_data[type == "RF", ],
+    aes(x = nrate, y = ..density.., fill = type)
+  ) +
+  geom_histogram(
+    data = eonr_data[type == "GAM", ],
+    aes(x = nrate, y = -..density.., fill = type)
+  ) +
+  scale_fill_manual(
+    values = c("RF" = "red", "GAM" = "blue"),
+    name = "Model"
+  ) +
+  facet_wrap(. ~ id_field, ncol = 6) +
+  theme_bw() +
+  ylab("Frequency") +
+  xlab(bquote("EONR (kg ha"^-1 * ")")) +
+  theme(
+    legend.position = "none"
+  ) +
+  ggtitle("A")
+
+g_yield_dist <-
+  ggplot() +
+  geom_histogram(
+    data = eonr_data[type == "RF", ],
+    aes(x = y_hat, y = ..density.., fill = type)
+  ) +
+  geom_histogram(
+    data = eonr_data[type == "GAM", ],
+    aes(x = y_hat, y = -..density.., fill = type)
+  ) +
+  scale_fill_manual(
+    values = c("RF" = "red", "GAM" = "blue"),
+    name = "Model"
+  ) +
+  facet_wrap(. ~ id_field, ncol = 6) +
+  theme_bw() +
+  ylab("Frequency") +
+  xlim(
+    eonr_data$y_hat %>% quantile(prob = 0.025),
+    eonr_data$y_hat %>% quantile(prob = 0.975)
+  ) +
+  xlab(bquote("YEONR (Mg ha"^-1 * ")")) +
+  theme(
+    legend.position = "bottom"
+  ) +
+  ggtitle("B")
+
+g_eonr_yield_dist <- g_eonr_dist / g_yield_dist
+
+ggsave(here("Writing/Figures/g_eonr_yield_dist.pdf"), g_eonr_yield_dist, width = 7, height = 8)
+```
+
+<!-- ## Shapley values  {-} -->
+
+```{r }
+rf_eonr_shap <-
+  readRDS(here("Results/rf_eonr_shap.rds")) %>%
+  dplyr::select(id_field, shap_values) %>%
+  mutate(model = "RF")
+
+gam_eonr_shap <-
+  readRDS(here("Results/gam_eonr_shap.rds")) %>%
+  dplyr::select(id_field, shap_values) %>%
+  mutate(model = "GAM")
+
+eonr_shap <-
+  rbind(rf_eonr_shap, gam_eonr_shap) %>%
+  unnest() %>%
+  data.table() %>%
+  setnames("variable", "var") %>%
+  dcast(id_field + obs_id + var + model ~ type, value.var = "value") %>%
+  .[variable != "none", ] %>%
+  setnames("variable", "norm_var") %>%
+  .[, min_shap := min(shap)] %>%
+  .[, max_shap := max(shap)] %>%
+  nest_by(id_field, model, min_shap, max_shap) %>%
+  mutate(data = list(
+    data.table(data)
+  )) %>%
+  mutate(var_ranked = list(
+    copy(data) %>%
+      .[, .(abs_cb = mean(abs(shap), na.rm = TRUE)), by = var] %>%
+      .[order(-abs_cb), ] %>%
+      #* pick the top 5
+      .[1:5, ] %>%
+      .[order(abs_cb), var]
+  )) %>%
+  mutate(data = list(
+    data[, var := factor(var, levels = var_ranked)] %>%
+      .[!is.na(var), ]
+  )) %>%
+  dplyr::select(-var_ranked) %>%
+  mutate(g_shap = list(
+    ggplot(data = data) +
+      geom_point(
+        aes(y = var, x = shap, color = norm_var),
+        size = 0.5,
+        position = position_jitterdodge()
+      ) +
+      xlim(min_shap, max_shap) +
+      ylab("") +
+      xlab("") +
+      ggtitle(paste0("Field:", id_field)) +
+      # xlab("Shapley Value (Impact on EONR)") +
+      theme_bw() +
+      scale_color_viridis_c(option = "B", direction = -1) +
+      theme(
+        legend.position = "none",
+        plot.title = element_text(size = 9)
+      )
+  ))
+
+
+library(patchwork)
+
+#* RF
+rf_g_shap <-
+  eonr_shap %>%
+  filter(model == "RF") %>%
+  pull(g_shap) %>%
+  wrap_plots(ncol = 3)
+
+ggsave(here("Writing/Figures/rf_shap.pdf"), rf_g_shap, height = 9, width = 7)
+
+#* GAM
+gam_g_shap <-
+  eonr_shap %>%
+  filter(model == "GAM") %>%
+  pull(g_shap) %>%
+  wrap_plots(ncol = 3)
+
+ggsave(here("Writing/Figures/gam_shap.pdf"), gam_g_shap, height = 9, width = 7)
+```
+
+<!-- ## EONR validity on average {-} -->
+
+```{r }
+eonr_validation <-
+  readRDS(here("Results/eonr_validation.rds")) %>%
+  .[, obs_id := NULL] %>%
+  melt(id.vars = c("id_field", "id")) %>%
+  .[, variable := fcase(
+    variable == "u_eonr", "Uniform EONR",
+    variable == "eonr_gam", "GAM",
+    variable == "eonr_rf", "RF"
+  )] %>%
+  .[, id := gsub("Fold", "", id) %>% as.numeric()] %>%
+  .[, .(eonr = mean(value)), by = .(id_field, id, variable)] %>%
+  .[, variable := factor(variable, levels = c("RF", "GAM", "Uniform EONR"))]
+
+g_eonr_cv <-
+  ggplot(eonr_validation) +
+  geom_col(aes(y = eonr, x = factor(id), fill = variable), position = "dodge") +
+  facet_wrap(. ~ id_field, ncol = 3) +
+  xlab("Fold ID") +
+  ylab("Estimated EONR (kg/ha)") +
+  scale_fill_discrete(name = "") +
+  theme_bw() +
+  theme(
+    legend.position = "bottom"
+  )
+
+ggsave(here("Writing/Figures/eonr_cv.pdf"), g_eonr_cv, width = 7, height = 8)
+```
+
+
+<!-- # Tables {-} -->
+
+<!-- ## Show how close `rmse_cv` are for full and short sets of variables {-} -->
+
+
+```{r }
+rf_sp_cv <-
+  readRDS(here("Results/rf_sp_cv.rds")) %>%
+  .[, .SD[which.min(rmse_cv)], by = .(id_field, short)] %>%
+  .[, .(id_field, rmse_cv, short)] %>%
+  .[, model := "RF"]
+
+gam_sp_cv <-
+  readRDS(here("Results/gam_sp_cv.rds")) %>%
+  .[, .(id_field, rmse_cv, short)] %>%
+  .[, model := "GAM"]
+
+rmse_cv_tab <-
+  rbind(rf_sp_cv, gam_sp_cv) %>%
+  .[, rmse_cv := round(rmse_cv, digits = 3)] %>%
+  .[, short := fcase(
+    short == TRUE, "Selected",
+    short == FALSE, "Full"
+  )] %>%
+  .[, model := factor(model, levels = c("RF", "GAM"))] %>%
+  dcast(id_field ~ short + model, value.var = "rmse_cv") %>%
+  .[, .(id_field, Selected_RF, Full_RF, Selected_GAM, Full_GAM)] %>%
+  flextable() %>%
+  set_header_labels(
+    id_field = "Field ID",
+    Full_RF = "Full (RF)",
+    Selected_RF = "Selected (RF)",
+    Full_GAM = "Full (GAM)",
+    Selected_GAM = "Selected (GAM)"
+  ) %>%
+  autofit()
+```
+
+## RMSE of EONR 
+
+```{r }
+eonr_rmse <-
+  readRDS(here("Results/eonr_validation.rds")) %>%
+  .[, obs_id := NULL] %>%
+  .[, `:=`(
+    e_eonr_rf = eonr_rf - u_eonr,
+    e_eonr_gam = eonr_gam - u_eonr,
+    e2_eonr_rf = (eonr_rf - u_eonr)^2,
+    e2_eonr_gam = (eonr_gam - u_eonr)^2
+  )] %>%
+  .[, .(
+    me_rf = mean(e_eonr_rf) %>% round(digits = 2),
+    me_gam = mean(e_eonr_gam) %>% round(digits = 2),
+    rmse_rf = mean(e2_eonr_rf) %>% sqrt() %>% round(digits = 2),
+    rmse_gam = mean(e2_eonr_gam) %>% sqrt() %>% round(digits = 2)
+  ),
+  by = .(id_field)
+  ] %>%
+  .[, .(id_field, rmse_rf, me_rf, rmse_gam, me_gam)] %>%
+  flextable() %>%
+  set_header_labels(
+    id_field = "Field ID",
+    rmse_rf = "RMSE (RF)",
+    me_rf = "ME (RF)",
+    rmse_gam = "RMSE (GAM)",
+    me_gam = "ME (GAM)"
+  ) %>%
+  autofit() %>%
+  align(align = "center", part = "header") %>%
+  align(j = 1:5, align = "center")
+
+```

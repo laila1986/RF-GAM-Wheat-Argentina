@@ -26,80 +26,159 @@ difm_geo <- readRDS(here("Data/all_data.rds"))
 # RF
 
 ```{r }
-set.seed(893423)
-
-RF_sp_cv <-
+rf_sp_cv <-
   readRDS("Results/rf_sp_cv.rds") %>%
+  .[short == TRUE, ] %>%
   #* pick the best hyper parametres and variable set
   .[, .SD[which.min(rmse_cv), ], by = id_field]
 
-difm_geo %>%
-  left_join(., RF_sp_cv, by = "id_field") %>%
+set.seed(782433)
+rf_results <-
+  difm_geo %>%
+  left_join(., rf_sp_cv, by = "id_field") %>%
+  mutate(all_x_vars = list(c("nrate", x_vars))) %>%
+  mutate(data = list(
+    mutate(data, obs_id = 1:n())
+  )) %>%
   mutate(rf_trained = list(
     grf::regression_forest(
-      X = data[, ..x_vars],
+      X = data[, ..all_x_vars],
       Y = data[, yield],
       mtry = mtry,
       min.node.size = min.node.size,
       sample.fraction = sample.fraction,
       num.threads = 1,
-      num.trees = 4000
+      num.trees = 2000
     )
   )) %>%
   mutate(n_seq = list(
-    data[, seq(min(nrate), max(nrate), by = 1)]
+    data[, seq(min(nrate), max(nrate), by = 3)]
   )) %>%
-  mutate(pred_data = list(
+  mutate(eonr_data = list(
     data %>%
       .[, nrate := NULL] %>%
-      expand_grid_df(., data.table(nrate = n_seq))
-  ))
+      expand_grid_df(., data.table(nrate = n_seq)) %>%
+      .[, y_hat := predict(rf_trained, newdata = .[, all_x_vars, with = FALSE])$predictions] %>%
+      .[, pi_hat := Pw * y_hat - Pn * nrate] %>%
+      .[, .SD[which.max(pi_hat), ], by = obs_id]
+  )) %>%
+  mutate(
+    rmse_train =
+      eonr_data[, (yield - y_hat)^2 %>% mean() %>% sqrt()]
+  ) %>%
+  mutate(
+    r2_train =
+      lm(yield ~ y_hat, data = eonr_data) %>%
+        summary() %>%
+        .$r.squared
+  )
+
+saveRDS(rf_results, "Results/rf_results.rds")
+
+rf_results %>%
+  dplyr::select(id_field, eonr_data, x_vars) %>%
+  saveRDS("Results/rf_eonr_results.rds")
+
+#* save rmse for a figure
+rf_results %>%
+  dplyr::select(id_field, rmse_cv, rmse_train) %>%
+  saveRDS("Results/rf_rmse.rds")
+
+# mutate(eonr_driver = list(
+#   regression_forest(
+#     X = eonr_data[, ..x_vars],
+#     Y = eonr_data[, nrate],
+#     num.threads = 1,
+#     num.trees = 1000
+#   )
+# )) %>%
+# mutate(var_i_eonr = list(
+#   variable_importance(eonr_driver) %>%
+#     data.table() %>%
+#     .[, term := x_vars]
+# )) %>%
+# mutate(eonr_feols = list(
+#   feols(nrate ~ .[x_vars], data = eonr_data) %>%
+#     tidy() %>%
+#     data.table() %>%
+#     .[, .(term, estimate, statistic)]
+# )) %>%
+# mutate(sd_data = list(
+#   eonr_data[, ..x_vars] %>%
+#     .[
+#       ,
+#       lapply(
+#         .SD,
+#         function(x) {
+#           quantile(x, prob = 0.75) - quantile(x, prob = 0.5)
+#         }
+#       )
+#     ] %>%
+#     melt() %>%
+#     setnames("variable", "term")
+# )) %>%
+# mutate(eonr_impact = list(
+#   sd_data[eonr_feols, on = "term"] %>%
+#     .[, mi_impact := estimate * value]
+# )) %>%
+# mutate(var_i_eonr = list(
+#   eonr_impact[var_i_eonr, on = "term"]
+# )) %>%
+# dplyr::select(-eonr_impact, -sd_data, -eonr_feols)
 ```
+
 
 # Spatial CV of GAM
 
 ```{r }
-# split_data <- temp$split_data[[1]]
-# gam_formula <- temp$formula_short[[1]]
-
 gam_sp_cv <-
+  readRDS("Results/gam_sp_cv.rds") %>%
+  .[short == TRUE, ] %>%
+  #* pick the best hyper parametres and variable set
+  .[, .SD[which.min(rmse_cv), ], by = id_field]
+
+gam_results <-
   difm_geo %>%
-  mutate(vars_ls = list(
-    list(x_vars_to_keep, vars_with_low_cor)
+  left_join(., gam_sp_cv, by = "id_field") %>%
+  mutate(data = list(
+    mutate(data, obs_id = 1:n())
   )) %>%
-  mutate(cv_results = list(
-    mclapply(
-      vars_ls,
-      function(x) {
-        print(id_field)
-
-        gam_formula <-
-          paste0(
-            "yield ~ s(nrate, k = 2) + ",
-            paste0("I(nrate*", x, ")", collapse = " + "), " + ",
-            paste0("s(", x, ", k = 3)", collapse = " + ")
-          )
-
-        cv_data <-
-          run_sptial_cv_gam(
-            split_data,
-            gam_formula = gam_formula
-          ) %>%
-          .[, `:=`(
-            vars = x,
-            gam_formula = gam_formula
-          )]
-        return(cv_data)
-      },
-      mc.cores = 2
-    ) %>%
-      rbindlist()
+  mutate(gam_trained = list(
+    mgcv::gam(
+      formula(gam_formula),
+      data = data,
+      method = "REML"
+    )
   )) %>%
-  dplyr::select(id_field, cv_results) %>%
-  unnest() %>%
-  data.table()
+  mutate(n_seq = list(
+    data[, seq(min(nrate), max(nrate), by = 3)]
+  )) %>%
+  mutate(eonr_data = list(
+    data %>%
+      .[, nrate := NULL] %>%
+      expand_grid_df(., data.table(nrate = n_seq)) %>%
+      .[, y_hat := predict(gam_trained, newdata = .)] %>%
+      .[, pi_hat := Pw * y_hat - Pn * nrate] %>%
+      .[, .SD[which.max(pi_hat), ], by = obs_id]
+  )) %>%
+  mutate(
+    rmse_train =
+      eonr_data[, (yield - y_hat)^2 %>% mean() %>% sqrt()]
+  ) %>%
+  mutate(
+    r2_train =
+      lm(yield ~ y_hat, data = eonr_data) %>%
+        summary() %>%
+        .$r.squared
+  )
 
-saveRDS(, "Results/gam_sp_cv.rds")
+saveRDS(gam_results, "Results/gam_results.rds")
 
-gam_sp_cv[, .SD[which.min(rmse_cv), ], by = id_field]
+gam_results %>%
+  dplyr::select(id_field, eonr_data, x_vars) %>%
+  saveRDS("Results/gam_eonr_results.rds")
+
+gam_results %>%
+  dplyr::select(id_field, rmse_cv, rmse_train) %>%
+  saveRDS("Results/gam_rmse.rds")
 ```

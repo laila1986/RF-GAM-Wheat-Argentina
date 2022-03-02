@@ -20,7 +20,7 @@ run_sptial_cv_rf <- function(split_data, mtry, min.node.size, sample.fraction, x
         min.node.size = min.node.size,
         sample.fraction = sample.fraction,
         num.threads = 1,
-        num.trees = 1000
+        num.trees = 500
       )
     )) %>%
     mutate(test_data = list(

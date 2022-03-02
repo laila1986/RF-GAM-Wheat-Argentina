@@ -1,0 +1,53 @@
+# Setup
+
+```{r echo = F, include = FALSE, cache = F}
+library(knitr)
+library(tidyverse)
+opts_chunk$set(
+  fig.align = "center",
+  fig.retina = 5,
+  warning = F,
+  message = F,
+  cache = T,
+  echo = F
+)
+
+#* source functions
+fs::dir_ls(here::here("Codes/functions")) %>%
+  lapply(., source)
+```
+
+# EONR validity 
+
+Find the uniform EONR for the test data of each of the folds using `scam()` and then compare that against RF- and GAM-estimated EONR. 
+
+```{r }
+# split_data <- data_for_cv$split_data[[1]]
+# x_vars <- data_for_cv$vars_with_low_cor[[1]]
+# eonr_data_rf <- data_for_cv$eonr_data_rf[[1]]
+# eonr_data_gam <- data_for_cv$eonr_data_gam[[1]]
+
+eonr_validation <-
+  #* read the data for spatial cv
+  readRDS("Data/data_for_cv.rds") %>%
+  mutate(num_obs = nrow(data)) %>%
+  filter(num_obs > 1000) %>%
+  #* merge with estimated EONR from RF
+  left_join(., readRDS("Results/rf_eonr_results.rds"), by = "id_field") %>%
+  setnames("eonr_data", "eonr_data_rf") %>%
+  dplyr::select(-x_vars_to_keep, -data, -all_vars, -x_vars) %>%
+  #* merge with estimated EONR from GAM
+  left_join(., readRDS("Results/gam_eonr_results.rds"), by = "id_field") %>%
+  dplyr::select(-x_vars) %>%
+  setnames("eonr_data", "eonr_data_gam") %>%
+  mutate(eonrs_cv_folds = list(
+    get_uniform_eonr_cv(split_data, vars_with_low_cor, eonr_data_rf, eonr_data_gam, id_field)
+  )) %>%
+  data.table() %>%
+  .[, .(id_field, eonrs_cv_folds)] %>%
+  unnest() %>%
+  data.table()
+
+saveRDS(eonr_validation, "Results/eonr_validation.rds")
+```
+

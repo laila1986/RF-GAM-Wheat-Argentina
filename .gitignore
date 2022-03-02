@@ -1,6 +1,11 @@
 Data/*
 Results/*
 Codes/Fig*
+Writing/*cache/*
+Writing/*files/*
 Codes/Table*
 *.docx
+*pdf
 .here
+.Rproj.user
+*.Rproj

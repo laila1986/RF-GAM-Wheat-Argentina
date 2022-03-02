@@ -1,0 +1,69 @@
+# Setup
+
+```{r echo = F, include = FALSE, cache = F}
+library(knitr)
+library(tidyverse)
+opts_chunk$set(
+  fig.align = "center",
+  fig.retina = 5,
+  warning = F,
+  message = F,
+  cache = T,
+  echo = F
+)
+
+#* source functions
+fs::dir_ls(here::here("Codes/functions")) %>%
+  lapply(., source)
+```
+
+
+# RF EONR Shapley Valus
+
+```{r }
+set.seed(782433)
+
+rf_eonr_shap <-
+  readRDS("Results/rf_eonr_results.rds") %>%
+  mutate(eonr_rf = list(
+    ranger(
+      paste0(
+        "nrate ~ ",
+        paste0(x_vars, collapse = "+")
+      ) %>%
+        formula(),
+      data = eonr_data,
+      num.trees = 300
+    )
+  )) %>%
+  mutate(shap_values = list(
+    get_shap_values(eonr_data, x_vars, eonr_rf)
+  ))
+
+saveRDS(rf_eonr_shap, "Results/rf_eonr_shap.rds")
+```
+
+
+# GAM EONR Shapley Valus
+```{r }
+set.seed(782433)
+
+gam_eonr_shap <-
+  readRDS("Results/gam_eonr_results.rds") %>%
+  mutate(eonr_gam = list(
+    ranger(
+      paste0(
+        "nrate ~ ",
+        paste0(x_vars, collapse = "+")
+      ) %>%
+        formula(),
+      data = eonr_data,
+      num.trees = 300
+    )
+  )) %>%
+  mutate(shap_values = list(
+    get_shap_values(eonr_data, x_vars, eonr_gam)
+  ))
+
+saveRDS(gam_eonr_shap, "Results/gam_eonr_shap.rds")
+```

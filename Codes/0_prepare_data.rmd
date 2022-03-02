@@ -20,16 +20,21 @@ fs::dir_ls(here("Codes/functions")) %>%
 # Prepare dataset
 
 ```{r eval = F}
+#*  Note
+#*  maxndvim30 dropped (data leakage: using information that is not available at the time of decision making)
+
 x_vars <-
   c(
     "ec30", "ec90", "ecratio",
     "aspect", "curvature", "slope", "tpi", "twi", "elevnorm",
-    "ndrepc", "ndvipc", "maxndvim30",
+    "ndrepc", "ndvipc",
     "soilom", "soilp", "soilph"
   )
 
 difm_geo <-
   st_read(here("Data/DIFM_VHA_Treats.shp")) %>%
+  # st_set_crs() %>%
+  # st_transform(4326) %>%
   data.table() %>%
   setnames(names(.), tolower(names(.))) %>%
   mutate(id_field = as_factor(id_field)) %>%
@@ -62,11 +67,17 @@ difm_geo <-
     funs(ifelse(soilom == 0, NA, .))
   ) %>%
   mutate_at(
-    .vars = c("maxndvim10", "maxndvim20", "maxndvim30", "hmndvi", "maxndvi", "vhbyndvim", "vvbyndvim", "nrpb"),
+    .vars = c(
+      "maxndvim10", "maxndvim20", "maxndvim30", "hmndvi",
+      "maxndvi", "vhbyndvim", "vvbyndvim", "nrpb"
+    ),
     funs(ifelse(maxndvim10 == 0, NA, .))
   ) %>%
   mutate_at(
-    .vars = c("elevation", "aspect", "curvature", "slope", "tpi", "twi", "elevnorm"),
+    .vars = c(
+      "elevation", "aspect", "curvature", "slope",
+      "tpi", "twi", "elevnorm"
+    ),
     funs(ifelse(elevation == 0, NA, .))
   ) %>%
   dplyr::select(
@@ -105,13 +116,15 @@ difm_geo <-
       as.character()
   )) %>%
   mutate(all_vars = list(
-    c("yield", "nrate", x_vars_to_keep, "X", "Y")
+    c("yield", "nrate", x_vars_to_keep, "X", "Y", "geometry")
   )) %>%
   mutate(data = list(
     data[, ..all_vars] %>%
-      na.omit()
+      na.omit() %>%
+      .[, obs_id := 1:.N]
   ))
 
 saveRDS(difm_geo, here("Data/all_data.rds"))
+
 ```
 
