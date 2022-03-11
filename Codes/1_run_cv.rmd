@@ -69,19 +69,28 @@ RF_sp_cv <-
       seq_len(nrow(tune_pars)),
       function(x) {
         print(x)
+
+        x_vars <- c("nrate", tune_pars[x, vars_set][[1]])
+        formula_yield <-
+          paste0(
+            "yield ~ ",
+            paste0(x_vars, collapse = "+")
+          )
+
         cv_data <-
           run_sptial_cv_rf(
-            split_data,
+            split_data = split_data,
+            formula = formula_yield,
             mtry = tune_pars[x, mtry],
             min.node.size = tune_pars[x, min.node.size],
-            sample.fraction = tune_pars[x, sample.fraction],
-            x_vars = c("nrate", tune_pars[x, vars_set][[1]])
+            sample.fraction = tune_pars[x, sample.fraction]
           ) %>%
           .[, `:=`(
             mtry = tune_pars[x, mtry],
             min.node.size = tune_pars[x, min.node.size],
             sample.fraction = tune_pars[x, sample.fraction],
             x_vars = tune_pars[x, vars_set],
+            formula_yield = formula_yield,
             short = tune_pars[x, short]
           )]
         return(cv_data)

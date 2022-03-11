@@ -23,42 +23,44 @@ fs::dir_ls(here::here("Codes/functions")) %>%
 difm_geo <- readRDS(here("Data/all_data.rds"))
 ```
 
-# RF
+# Train RF
 
 ```{r }
 rf_sp_cv <-
   readRDS("Results/rf_sp_cv.rds") %>%
-  .[short == TRUE, ] %>%
+  # .[short == TRUE, ] %>%
   #* pick the best hyper parametres and variable set
   .[, .SD[which.min(rmse_cv), ], by = id_field]
 
 set.seed(782433)
+
 rf_results <-
   difm_geo %>%
   left_join(., rf_sp_cv, by = "id_field") %>%
   mutate(all_x_vars = list(c("nrate", x_vars))) %>%
-  mutate(data = list(
-    mutate(data, obs_id = 1:n())
-  )) %>%
   mutate(rf_trained = list(
-    grf::regression_forest(
-      X = data[, ..all_x_vars],
-      Y = data[, yield],
+    ranger(
+      formula = formula_yield,
+      data = data,
       mtry = mtry,
       min.node.size = min.node.size,
       sample.fraction = sample.fraction,
       num.threads = 1,
-      num.trees = 2000
+      num.trees = 1000
     )
   )) %>%
   mutate(n_seq = list(
     data[, seq(min(nrate), max(nrate), by = 3)]
   )) %>%
   mutate(eonr_data = list(
-    data %>%
+    copy(data) %>%
       .[, nrate := NULL] %>%
       expand_grid_df(., data.table(nrate = n_seq)) %>%
-      .[, y_hat := predict(rf_trained, newdata = .[, all_x_vars, with = FALSE])$predictions] %>%
+      .[, y_hat :=
+        predict(
+          rf_trained,
+          data = .
+        )$predictions] %>%
       .[, pi_hat := Pw * y_hat - Pn * nrate] %>%
       .[, .SD[which.max(pi_hat), ], by = obs_id]
   )) %>%
@@ -128,7 +130,7 @@ rf_results %>%
 ```
 
 
-# Spatial CV of GAM
+# Train GAM
 
 ```{r }
 gam_sp_cv <-
@@ -140,9 +142,6 @@ gam_sp_cv <-
 gam_results <-
   difm_geo %>%
   left_join(., gam_sp_cv, by = "id_field") %>%
-  mutate(data = list(
-    mutate(data, obs_id = 1:n())
-  )) %>%
   mutate(gam_trained = list(
     mgcv::gam(
       formula(gam_formula),
@@ -154,7 +153,7 @@ gam_results <-
     data[, seq(min(nrate), max(nrate), by = 3)]
   )) %>%
   mutate(eonr_data = list(
-    data %>%
+    copy(data) %>%
       .[, nrate := NULL] %>%
       expand_grid_df(., data.table(nrate = n_seq)) %>%
       .[, y_hat := predict(gam_trained, newdata = .)] %>%
@@ -181,4 +180,47 @@ gam_results %>%
 gam_results %>%
   dplyr::select(id_field, rmse_cv, rmse_train) %>%
   saveRDS("Results/gam_rmse.rds")
+```
+
+# Shapley values for yield prediction
+
+```{r }
+rf_results <- readRDS(here("Results/rf_results.rds"))
+
+shap_yield_rf <-
+  rf_results %>%
+  dplyr::select(id_field, x_vars, data, rf_trained) %>%
+  mutate(shap_values = list(
+    get_shap_values(
+      data = data,
+      x_vars = c("nrate", x_vars),
+      trained_model = rf_trained
+    )
+  )) %>%
+  dplyr::select(-rf_trained, -data, -x_vars) %>%
+  unnest() %>%
+  data.table()
+
+saveRDS(shap_yield_rf, here("Results/shap_yield_rf.rds"))
+```
+
+```{r }
+gam_results <- readRDS(here("Results/gam_results.rds"))
+
+shap_yield_gam <-
+  gam_results %>%
+  dplyr::select(id_field, x_vars, data, gam_trained) %>%
+  .[1, ] %>%
+  mutate(shap_values = list(
+    get_shap_values(
+      data = data,
+      x_vars = c("nrate", x_vars),
+      trained_model = gam_trained
+    )
+  )) %>%
+  dplyr::select(-gam_trained, -data, -x_vars) %>%
+  unnest() %>%
+  data.table()
+
+saveRDS(shap_yield_gam, here("Results/shap_yield_gam.rds"))
 ```

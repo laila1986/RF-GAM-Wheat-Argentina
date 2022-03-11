@@ -6,6 +6,6 @@ Writing/*files/*
 Codes/Table*
 *.docx
 *pdf
-.here
 .Rproj.user
 *.Rproj
+*.DS_Store

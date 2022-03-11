@@ -37,7 +37,11 @@ rf_eonr_shap <-
     )
   )) %>%
   mutate(shap_values = list(
-    get_shap_values(eonr_data, x_vars, eonr_rf)
+    get_shap_values(
+      data = eonr_data,
+      x_vars = x_vars,
+      trained_model = eonr_rf
+    )
   ))
 
 saveRDS(rf_eonr_shap, "Results/rf_eonr_shap.rds")
@@ -62,7 +66,11 @@ gam_eonr_shap <-
     )
   )) %>%
   mutate(shap_values = list(
-    get_shap_values(eonr_data, x_vars, eonr_gam)
+    get_shap_values(
+      data = eonr_data,
+      x_vars = x_vars,
+      trained_model = eonr_gam
+    )
   ))
 
 saveRDS(gam_eonr_shap, "Results/gam_eonr_shap.rds")

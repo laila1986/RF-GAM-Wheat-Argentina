@@ -2,7 +2,21 @@
 #' # Run spatial CV
 # /*===========================================================
 
-run_sptial_cv_rf <- function(split_data, mtry, min.node.size, sample.fraction, x_vars) {
+# id <- 1
+# x <- 1
+# split_data <- RF_sp_cv$split_data[[id]]
+# tune_pars <- RF_sp_cv$tune_pars[[id]]
+# mtry <- tune_pars[x, mtry]
+# min.node.size <- tune_pars[x, min.node.size]
+# sample.fraction <- tune_pars[x, sample.fraction]
+# x_vars <- c("nrate", tune_pars[x, vars_set][[1]])
+
+run_sptial_cv_rf <- function(split_data, formula, mtry, min.node.size, sample.fraction) {
+
+  # trained_model <- cv_results$trained_model[[1]]
+  # test_data <- cv_results$test_data[[1]]
+  # temp <- predict(trained_model, data = test_data)$predictions
+
   cv_results <-
     split_data %>%
     rowwise() %>%
@@ -13,9 +27,9 @@ run_sptial_cv_rf <- function(split_data, mtry, min.node.size, sample.fraction, x
       assessment(splits)
     )) %>%
     mutate(trained_model = list(
-      regression_forest(
-        X = train_data[, ..x_vars],
-        Y = train_data[, yield],
+      ranger(
+        formula = formula,
+        data = train_data,
         mtry = mtry,
         min.node.size = min.node.size,
         sample.fraction = sample.fraction,
@@ -24,7 +38,13 @@ run_sptial_cv_rf <- function(split_data, mtry, min.node.size, sample.fraction, x
       )
     )) %>%
     mutate(test_data = list(
-      mutate(test_data, y_hat = predict(trained_model, newdata = test_data[, ..x_vars])$predictions)
+      mutate(
+        test_data,
+        y_hat = predict(
+          trained_model,
+          data = test_data
+        )$predictions
+      )
     )) %>%
     mutate(perf_measures = list(
       data.table(
