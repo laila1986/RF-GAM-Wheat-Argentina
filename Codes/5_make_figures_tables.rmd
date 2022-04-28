@@ -68,12 +68,18 @@ g_sp_cv <-
   ggplot(data_for_cv) +
   geom_sf(aes(col = type), size = 0.3) +
   facet_wrap(. ~ fold, ncol = 3) +
-  theme_void() +
+  theme_void() +  
+  scale_color_npg(name = "") +
   guides(color = guide_legend(override.aes = list(size = 6))) +
-  scale_color_discrete(name = "Data Type") +
+  #scale_color_discrete(name = "Data Type") +
   theme(
     legend.position = c(0.8, 0.15)
-  )
+  ) + 
+  theme(plot.background = element_rect(fill = "white"), panel.border = element_blank()) #+ theme(plot.background=element_blank())
+
+ggsave('Fig3.png', g_sp_cv, dpi = 500, height = 5, width = 6)
+
+ggsave(here("Codes/Fig3.pdf"), g_sp_cv, height = 5, width = 6)
 
 # tm_shape(data_for_cv) +
 #   tm_symbols(col = "type") +
@@ -99,19 +105,30 @@ g_rmse_comp <-
   .[, variable := fcase(
     variable == "rmse_cv", "RMSE (SPCV)",
     variable == "rmse_train", "RMSE"
-  )] %>%
+   )] %>% 
   .[, type := factor(type, levels = c("RF", "GAM"))] %>%
+  group_by(type, variable) %>%
+  mutate (id_field2 = as.factor(c("1", "2", "3", "4", "5","6", "7", "8", "9", "10", "11", "14", "15", "16", "17", "18","19","20"))) %>%
+  mutate (id_field2 = factor(id_field2, ordered = TRUE, 
+                        levels = c("1", "2", "3", "4", "5","6", "7", "8", "9", "10", "11", "14", "15", "16", "17", "18","19","20")))%>%
+
   ggplot(.) +
   geom_col(
-    aes(y = value, x = factor(id_field), fill = type),
+    aes(y = value, x = factor(id_field2), fill = type),
     position = "dodge",
     width = 0.7
   ) +
   facet_grid(variable ~ .) +
   ylab("") +
   xlab("Field ID") +
-  scale_fill_discrete(name = "Model") +
-  theme_bw()
+ # scale_fill_discrete(name = "Model") +
+  scale_fill_npg(name = "Model") +
+  theme_base()
+
+ggsave('Fig5.png', g_rmse_comp, dpi = 300, height = 5, width = 8)
+
+ggsave(here("Codes/Fig5.pdf"), g_rmse_comp, height = 5, width = 8)
+
 ```
 
 <!-- ## Boxplot of EONR and YEONR by field and model (Figure 7 in the 1st round manuscript) {-} -->
@@ -137,8 +154,10 @@ gam_eonr <-
   .[, .(id_field, y_hat, nrate)] %>%
   .[, type := "GAM"]
 
-eonr_data <-
+eonr_data <- 
   rbind(rf_eonr, gam_eonr)
+  
+levels(eonr_data$id_field)<- c('1', '2', '3', '4', '5','6', '7', '8', '9', '10', '11', '12','13', '14', '15', '16', '17', '18','19','20')
 
 g_eonr_dist <-
   ggplot() +
@@ -150,18 +169,25 @@ g_eonr_dist <-
     data = eonr_data[type == "GAM", ],
     aes(x = nrate, y = -..density.., fill = type)
   ) +
-  scale_fill_manual(
-    values = c("RF" = "red", "GAM" = "blue"),
-    name = "Model"
-  ) +
+ # scale_fill_manual(
+  #  values = c("RF" = "red", "GAM" = "blue"),
+   # name = "Model"
+  #) +
+  scale_fill_npg()+
   facet_wrap(. ~ id_field, ncol = 6) +
-  theme_bw() +
+  theme_base() +
+  #theme_bw() +
   ylab("Frequency") +
   xlab(bquote("EONR (kg ha"^-1 * ")")) +
   theme(
     legend.position = "none"
   ) +
-  ggtitle("A")
+  ggtitle("A") +
+  theme(panel.grid.minor = element_line(size = 0.2,color = "grey"),  #element_blank()
+        panel.grid.major.x = element_line(size = 0.2,color = "grey"),
+        panel.grid.major.y = element_line(size = 0.2,color = "grey")) +
+   theme(plot.background=element_blank())
+
 
 g_yield_dist <-
   ggplot() +
@@ -173,12 +199,14 @@ g_yield_dist <-
     data = eonr_data[type == "GAM", ],
     aes(x = y_hat, y = -..density.., fill = type)
   ) +
-  scale_fill_manual(
-    values = c("RF" = "red", "GAM" = "blue"),
-    name = "Model"
-  ) +
+  #scale_fill_manual(
+   # values = c("RF" = "red", "GAM" = "blue"),
+    #name = "Model"
+  #) +
+  scale_fill_npg(name = "Model") +
   facet_wrap(. ~ id_field, ncol = 6) +
-  theme_bw() +
+  #theme_bw() +
+  theme_base() +
   ylab("Frequency") +
   xlim(
     eonr_data$y_hat %>% quantile(prob = 0.025),
@@ -188,11 +216,19 @@ g_yield_dist <-
   theme(
     legend.position = "bottom"
   ) +
-  ggtitle("B")
+  ggtitle("B") +
+   theme(panel.grid.minor = element_line(size = 0.2,color = "grey"),  #element_blank()
+        panel.grid.major.x = element_line(size = 0.2,color = "grey"),
+        panel.grid.major.y = element_line(size = 0.2,color = "grey")) +
+  theme(plot.background=element_blank())
 
 g_eonr_yield_dist <- g_eonr_dist / g_yield_dist
 
-ggsave(here("Writing/Figures/g_eonr_yield_dist.pdf"), g_eonr_yield_dist, width = 7, height = 8)
+#ggsave(here("Writing/Figures/g_eonr_yield_dist.pdf"), g_eonr_yield_dist, width = 7, height = 8)
+
+ggsave('Fig6.png',g_eonr_yield_dist, dpi = 300, height = 10, width = 8)
+
+ggsave(here("Codes/Fig6.pdf"), g_eonr_yield_dist, height = 10, width = 8)
 ```
 
 <!-- ## Shapley values  {-} -->
@@ -203,13 +239,17 @@ rf_eonr_shap <-
   dplyr::select(id_field, shap_values) %>%
   mutate(model = "RF")
 
+levels(rf_eonr_shap$id_field)<- c('1', '2', '3', '4', '5','6', '7', '8', '9', '10', '11', '12','13', '14', '15', '16', '17', '18','19','20')
+
 gam_eonr_shap <-
   readRDS(here("Results/gam_eonr_shap.rds")) %>%
   dplyr::select(id_field, shap_values) %>%
   mutate(model = "GAM")
 
+levels(gam_eonr_shap$id_field)<- c('1', '2', '3', '4', '5','6', '7', '8', '9', '10', '11', '12','13', '14', '15', '16', '17', '18','19','20')
+
 eonr_shap <-
-  rbind(rf_eonr_shap, gam_eonr_shap) %>%
+  rbind(rf_eonr_shap, gam_eonr_shap) %>% 
   unnest() %>%
   data.table() %>%
   setnames("variable", "var") %>%
@@ -221,7 +261,7 @@ eonr_shap <-
   nest_by(id_field, model, min_shap, max_shap) %>%
   mutate(data = list(
     data.table(data)
-  )) %>%
+  )) %>% 
   mutate(var_ranked = list(
     copy(data) %>%
       .[, .(abs_cb = mean(abs(shap), na.rm = TRUE)), by = var] %>%
@@ -246,7 +286,7 @@ eonr_shap <-
       ylab("") +
       xlab("") +
       ggtitle(paste0("Field: ", id_field)) +
-      # xlab("Shapley Value (Impact on EONR)") +
+      #xlab("Shapley Value (Impact on EONR)") +
       theme_bw() +
       scale_color_viridis_c(
         option = "B",
@@ -254,6 +294,7 @@ eonr_shap <-
         name = ""
       ) +
       theme(
+        axis.text = element_text(size=10),
         legend.position = c(0.87, 0.6),
         legend.box.background = element_rect(fill = "transparent", color = NA),
         legend.background = element_rect(fill = "transparent", color = NA),
@@ -275,14 +316,19 @@ eonr_shap <-
 
 library(patchwork)
 
+
+
 #* RF
 rf_g_shap <-
   eonr_shap %>%
   filter(model == "RF") %>%
   pull(g_shap) %>%
-  wrap_plots(ncol = 3)
+  wrap_plots(ncol = 3) 
+  
 
-ggsave(here("Writing/Figures/rf_shap.pdf"), rf_g_shap, height = 9, width = 7)
+#ggsave(here("Writing/Figures/rf_shap.pdf"), rf_g_shap, height = 9, width = 7)
+
+ggsave(here("Codes/rf_shap.pdf"), rf_g_shap, height = 9, width = 7)
 
 #* GAM
 gam_g_shap <-
@@ -291,7 +337,11 @@ gam_g_shap <-
   pull(g_shap) %>%
   wrap_plots(ncol = 3)
 
-ggsave(here("Writing/Figures/gam_shap.pdf"), gam_g_shap, height = 9, width = 7)
+#ggsave(here("Writing/Figures/gam_shap.pdf"), gam_g_shap, height = 9, width = 7)
+
+ggsave(here("Codes/gam_shap.pdf"), gam_g_shap, height = 9, width = 7)
+
+
 ```
 
 <!-- ## EONR validity on average {-} -->
@@ -310,19 +360,31 @@ eonr_validation <-
   .[, .(eonr = mean(value)), by = .(id_field, id, variable)] %>%
   .[, variable := factor(variable, levels = c("RF", "GAM", "Uniform EONR"))]
 
+
+levels(eonr_validation$id_field)<- c('1', '2', '3', '4', '5','6', '7', '8', '9', '10', '11', '12','13', '14', '15', '16', '17', '18','19','20')
+
 g_eonr_cv <-
   ggplot(eonr_validation) +
   geom_col(aes(y = eonr, x = factor(id), fill = variable), position = "dodge") +
   facet_wrap(. ~ id_field, ncol = 3) +
   xlab("Fold ID") +
-  ylab("Estimated EONR (kg/ha)") +
-  scale_fill_discrete(name = "") +
-  theme_bw() +
+  ylab(bquote("Estimated EONR (kg ha"^-1 * ")"))+
+  scale_fill_npg(name = "")+
+ # scale_fill_discrete(name = "") +
+  theme_base() + #theme(plot.background=element_blank())+
+  #theme_bw() +
   theme(
     legend.position = "bottom"
-  )
+  ) 
 
-ggsave(here("Writing/Figures/eonr_cv.pdf"), g_eonr_cv, width = 7, height = 8)
+
+
+#ggsave(here("Writing/Figures/eonr_cv.pdf"), g_eonr_cv, width = 7, height = 8)
+
+ggsave('Fig7.png',g_eonr_cv, dpi = 300, height = 10, width = 8)
+
+ggsave(here("Codes/Fig7.pdf"), g_eonr_cv, height = 10, width = 8)
+
 ```
 
 
